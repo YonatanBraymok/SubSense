@@ -6,5 +6,5 @@ export default async function ProtectedPage() {
   const session = await auth();
   if (!session) redirect("/api/auth/signin");
 
-  return <div className="p-6">Super secret content 🎉</div>;
+  return <div className="p-6">You are signed in (/protected)</div>;
 }
