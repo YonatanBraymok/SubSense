@@ -19,6 +19,10 @@ model User {
   accounts       Account[]
   sessions       Session[]
 
+  displayName     String?
+  defaultCurrency String?
+  timezone        String?
+
   subscriptions Subscription[]
 
   @@map("users")
