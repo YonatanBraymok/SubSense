@@ -43,7 +43,7 @@ export async function POST(req: Request) {
         cost, // Prisma Decimal will accept number; you can also send as string if your schema prefers
         currency,
         billingCycle,
-        nextRenewal,
+        nextRenewal: new Date(nextRenewal), // Convert string to Date object
         userId: session.user.id,
       },
     });

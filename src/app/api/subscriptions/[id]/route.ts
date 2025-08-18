@@ -18,13 +18,14 @@ async function requireOwner(id: string, userId: string) {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const sub = await requireOwner(params.id, session.user.id);
+  const { id } = await params;
+  const sub = await requireOwner(id, session.user.id);
   if (!sub) {
     // 404 to not leak existence
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -34,7 +35,7 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -50,7 +51,8 @@ export async function PATCH(
     );
   }
 
-  const sub = await requireOwner(params.id, session.user.id);
+  const { id } = await params;
+  const sub = await requireOwner(id, session.user.id);
   if (!sub) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -71,7 +73,7 @@ export async function PATCH(
   }
 
   const updated = await prisma.subscription.update({
-    where: { id: params.id },
+    where: { id },
     data,
   });
 
@@ -83,18 +85,19 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const sub = await requireOwner(params.id, session.user.id);
+  const { id } = await params;
+  const sub = await requireOwner(id, session.user.id);
   if (!sub) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await prisma.subscription.delete({ where: { id: params.id } });
+  await prisma.subscription.delete({ where: { id } });
 
   // Keep server data in sync
   revalidatePath("/subscriptions");

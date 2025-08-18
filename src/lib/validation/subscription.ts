@@ -2,6 +2,7 @@
 import { z } from "zod";
 
 export const BillingCycleEnum = z.enum(["MONTHLY", "YEARLY"]);
+export const CurrencyEnum = z.enum(["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "SEK", "NOK", "DKK"]);
 
 export const subscriptionCreateSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -11,7 +12,7 @@ export const subscriptionCreateSchema = z.object({
   ]),
   currency: z.string().length(3, "Use a 3-letter currency code (e.g., USD)"),
   billingCycle: BillingCycleEnum,
-  nextRenewal: z.string().datetime().or(z.date()),
+  nextRenewal: z.string().or(z.date()),
 });
 
 // For PATCH (partial update) — but require at least one field:

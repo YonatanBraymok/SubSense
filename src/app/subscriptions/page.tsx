@@ -7,6 +7,8 @@ import { formatDate, formatMoney } from "@/lib/format";
 import Filters from "./filters";
 import type { SubscriptionRow } from "@/types/subscription";
 import { RowActions } from "@/app/subscriptions/RowActions";
+import ExportButton from "./export-button";
+import { AddSubscriptionDialog } from "./add-subscription-dialog";
 
 type PageSearchParams = {
   sort?: "nextRenewal" | "createdAt";
@@ -19,7 +21,7 @@ export const dynamic = "force-dynamic"; // ensure fresh data after mutations if 
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: PageSearchParams;
+  searchParams: Promise<PageSearchParams>;
 }) {
   const session = await auth();
   if (!session?.user) {
@@ -45,10 +47,13 @@ export default async function SubscriptionsPage({
     );
   }
 
+  // Await searchParams before using
+  const params = await searchParams;
+  
   // Defaults
-  const sort = (searchParams.sort ?? "nextRenewal") as "nextRenewal" | "createdAt";
-  const dir = (searchParams.dir ?? "asc") as "asc" | "desc";
-  const cycle = (searchParams.cycle ?? "ALL") as "ALL" | BillingCycle;
+  const sort = (params.sort ?? "nextRenewal") as "nextRenewal" | "createdAt";
+  const dir = (params.dir ?? "asc") as "asc" | "desc";
+  const cycle = (params.cycle ?? "ALL") as "ALL" | BillingCycle;
 
   // Build where/orderBy safely
   const where: Prisma.SubscriptionWhereInput = {
@@ -83,7 +88,11 @@ export default async function SubscriptionsPage({
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Subscriptions</h1>
-        <Filters defaultSort={sort} defaultDir={dir} defaultCycle={cycle} />
+        <div className="flex items-center gap-3">
+          <AddSubscriptionDialog />
+          <ExportButton currentParams={{ sort, dir, cycle }} />
+          <Filters defaultSort={sort} defaultDir={dir} defaultCycle={cycle} />
+        </div>
       </div>
 
       {/* Totals */}

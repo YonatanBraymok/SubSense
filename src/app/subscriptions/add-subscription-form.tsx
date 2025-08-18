@@ -14,7 +14,11 @@ import { useRouter } from "next/navigation";
 // Use Zod input type so raw form values (e.g., date string) match the form.
 type FormValues = z.input<typeof subscriptionCreateSchema>;
 
-export default function AddSubscriptionForm() {
+type Props = {
+  onSaved?: () => void;
+};
+
+export default function AddSubscriptionForm({ onSaved }: Props) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
@@ -48,6 +52,9 @@ export default function AddSubscriptionForm() {
 
     // nextRenewal is a "YYYY-MM-DD" string; API zod will coerce to Date
     const payload = { ...values };
+    
+    // Debug: log what we're sending
+    console.log("Submitting subscription:", payload);
 
     try {
       const res = await fetch("/api/subscriptions", {
@@ -66,7 +73,11 @@ export default function AddSubscriptionForm() {
           setServerError("Please fix the highlighted fields and try again.");
           return;
         }
-        setServerError(data?.error ?? "Something went wrong.");
+        if (res.status === 500) {
+          setServerError("Server error. Please try again or contact support.");
+          return;
+        }
+        setServerError(data?.error ?? `Error ${res.status}: Something went wrong.`);
         return;
       }
 
@@ -82,6 +93,7 @@ export default function AddSubscriptionForm() {
         nextRenewal: toYYYYMMDD(plus30),
       });
       setServerSuccess("Subscription added!");
+      onSaved?.();
     } catch (err) {
       console.error(err);
       setServerError("Network error. Please try again.");
@@ -93,10 +105,9 @@ export default function AddSubscriptionForm() {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="space-y-4 max-w-md p-4 rounded-xl border"
+      className="space-y-4"
       aria-describedby="form-status"
     >
-      <h2 className="text-xl font-semibold">Add Subscription</h2>
 
       <div>
         <label htmlFor="name" className="block mb-1 font-medium">
