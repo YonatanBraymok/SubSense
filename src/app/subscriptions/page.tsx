@@ -1,77 +1,214 @@
 // src/app/subscriptions/page.tsx
-import AddSubscriptionForm from "./add-subscription-form";
-import { auth } from "auth";           // ← use your app alias
+import { auth } from "auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";   // ← named export from your prisma singleton
+import { prisma } from "@/lib/prisma";
+import type { BillingCycle, Prisma } from "@prisma/client";
+import { computeTotals } from "@/lib/totals";
+import { formatDate, formatMoney } from "@/lib/format";
+import Filters from "./filters";
+import type { SubscriptionRow } from "@/types/subscription";
 
-// Format money with graceful fallback for unknown currency codes
-function formatMoney(amount: number, currency: string) {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
-}
+type PageSearchParams = {
+  sort?: "nextRenewal" | "createdAt";
+  dir?: "asc" | "desc";
+  cycle?: "ALL" | "MONTHLY" | "YEARLY";
+};
 
-export default async function SubscriptionsPage() {
+export const dynamic = "force-dynamic"; // ensure fresh data after mutations if needed
+
+export default async function SubscriptionsPage({
+  searchParams,
+}: {
+  searchParams: {
+    sort?: "nextRenewal" | "createdAt";
+    dir?: "asc" | "desc";
+    cycle?: "ALL" | "MONTHLY" | "YEARLY";
+  };
+}) {
   const session = await auth();
-
-  if (!session?.user?.id) {
+  if (!session?.user) {
     redirect("/api/auth/signin?callbackUrl=/subscriptions");
   }
 
-  // Prefer the id we place on session.user in NextAuth callbacks
-  let userId: string | null = session.user.id;
+  // ✅ No 'any' needed after augmentation
+  let userId: string | undefined = session.user.id;
 
-  // (Optional) Fallback by email if you ever hit an older session without id
   if (!userId && session.user.email) {
-    const dbUser = await prisma.user.findUnique({
+    const u = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { id: true },
     });
-    if (!dbUser) {
-      return <div className="p-6">No database user found for this session.</div>;
-    }
-    userId = dbUser.id;
+    userId = u?.id;
   }
 
   if (!userId) {
-    return <div className="p-6">Unable to resolve user. Please sign out and sign in again.</div>;
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-semibold">Subscriptions</h1>
+        <p className="mt-2 text-sm text-red-600">Could not resolve user id.</p>
+      </div>
+    );
   }
 
-  const subs = await prisma.subscription.findMany({
-    where: { userId },
-    orderBy: { nextRenewal: "asc" },
-  });
+  // Defaults
+  const sort = (searchParams.sort ?? "nextRenewal") as "nextRenewal" | "createdAt";
+  const dir = (searchParams.dir ?? "asc") as "asc" | "desc";
+  const cycle = (searchParams.cycle ?? "ALL") as "ALL" | BillingCycle;
+
+  // Build where/orderBy safely; one round-trip (no N+1).
+  const where: Prisma.SubscriptionWhereInput = {
+    userId,
+    ...(cycle !== "ALL" ? { billingCycle: cycle as BillingCycle } : {}),
+  };
+
+  const orderBy: Prisma.SubscriptionOrderByWithRelationInput =
+    sort === "nextRenewal"
+      ? { nextRenewal: dir }
+      : { createdAt: dir };
+
+  const subscriptions = (await prisma.subscription.findMany({
+    where,
+    orderBy,
+    // select only what we render (lean payload)
+    select: {
+      id: true,
+      name: true,
+      cost: true,
+      currency: true,
+      billingCycle: true,
+      nextRenewal: true,
+      createdAt: true,
+    },
+  })) as SubscriptionRow[];
+
+  const totals = computeTotals(
+    subscriptions.map((s) => ({ cost: s.cost, billingCycle: s.billingCycle }))
+  );
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
+    <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Your subscriptions</h1>
+        <h1 className="text-2xl font-semibold">Subscriptions</h1>
+        <Filters
+          defaultSort={sort}
+          defaultDir={dir}
+          defaultCycle={cycle}
+        />
       </div>
 
-      {/* Step 5 form (client component). On success it calls router.refresh() */}
-      <AddSubscriptionForm />
+      {/* Totals */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-xl border p-4">
+          <div className="text-sm text-gray-500">Monthly Spend (sum)</div>
+          <div className="text-xl font-semibold">
+            {/* No single currency for totals; just show numeric */}
+            {totals.monthlyTotal.toFixed(2)}
+          </div>
+          <div className="text-xs text-gray-500">
+            *Mixed currencies not normalized; this is a raw sum.
+          </div>
+        </div>
+        <div className="rounded-xl border p-4">
+          <div className="text-sm text-gray-500">Yearly Spend (sum)</div>
+          <div className="text-xl font-semibold">
+            {totals.yearlyTotal.toFixed(2)}
+          </div>
+          <div className="text-xs text-gray-500">
+            *Mixed currencies not normalized; this is a raw sum.
+          </div>
+        </div>
+      </div>
 
-      {subs.length === 0 ? (
-        <p className="text-sm text-gray-600">No subscriptions yet.</p>
-      ) : (
-        <ul className="divide-y rounded-lg border">
-          {subs.map((s) => (
-            <li key={s.id} className="py-3 px-4 flex items-center justify-between">
-              <div>
-                <div className="font-medium">{s.name}</div>
-                <div className="text-sm text-gray-500">
-                  Next renewal: {new Date(s.nextRenewal).toLocaleDateString()}
-                </div>
-              </div>
-              <div className="text-sm font-medium">
-                {formatMoney(Number(s.cost), s.currency)}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Table */}
+      <div className="overflow-x-auto rounded-xl border">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-left">
+            <tr>
+              <Th>Name</Th>
+              <Th>Cost</Th>
+              <Th>Currency</Th>
+              <Th>Billing Cycle</Th>
+              <Th>
+                <SortHeader
+                  label="Next Renewal"
+                  field="nextRenewal"
+                  active={sort === "nextRenewal"}
+                  dir={dir}
+                  cycle={cycle}
+                />
+              </Th>
+              <Th>
+                <SortHeader
+                  label="Created"
+                  field="createdAt"
+                  active={sort === "createdAt"}
+                  dir={dir}
+                  cycle={cycle}
+                />
+              </Th>
+            </tr>
+          </thead>
+          <tbody>
+            {subscriptions.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-6 text-center text-gray-500">
+                  No subscriptions yet.
+                </td>
+              </tr>
+            ) : (
+              subscriptions.map((s) => (
+                <tr key={s.id} className="border-t">
+                  <Td className="font-medium">{s.name}</Td>
+                  <Td>{formatMoney(s.cost, s.currency)}</Td>
+                  <Td>{s.currency}</Td>
+                  <Td>{s.billingCycle}</Td>
+                  <Td>{formatDate(s.nextRenewal)}</Td>
+                  <Td>{formatDate(s.createdAt)}</Td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
+  );
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-gray-600">{children}</th>;
+}
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <td className={`px-4 py-3 align-middle ${className}`}>{children}</td>;
+}
+
+/** Sort header link (server component) */
+function SortHeader({
+  label,
+  field,
+  active,
+  dir,
+  cycle,
+}: {
+  label: string;
+  field: "nextRenewal" | "createdAt";
+  active: boolean;
+  dir: "asc" | "desc";
+  cycle: "ALL" | "MONTHLY" | "YEARLY";
+}) {
+  // Toggle direction if clicking same field
+  const nextDir = active && dir === "asc" ? "desc" : "asc";
+  const params = new URLSearchParams({
+    sort: field,
+    dir: nextDir,
+    cycle,
+  });
+  return (
+    <a
+      className={`inline-flex items-center gap-1 ${active ? "font-semibold" : ""}`}
+      href={`/subscriptions?${params.toString()}`}
+    >
+      {label}
+      <span className="text-gray-400 text-[10px]">{active ? (dir === "asc" ? "▲" : "▼") : "▪"}</span>
+    </a>
   );
 }
