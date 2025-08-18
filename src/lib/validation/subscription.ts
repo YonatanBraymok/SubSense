@@ -2,26 +2,24 @@
 import { z } from "zod";
 
 export const BillingCycleEnum = z.enum(["MONTHLY", "YEARLY"]);
-export type BillingCycle = z.infer<typeof BillingCycleEnum>;
 
-// Keep currencies small and concrete for now; you can expand later.
-export const CurrencyEnum = z.enum(["USD", "EUR", "ILS"]);
-export type Currency = z.infer<typeof CurrencyEnum>;
-
-/**
- * Use z.coerce so form strings become the right types.
- * - cost: coerce to number (positive, 2 decimal places UI constraint is at the form level)
- * - nextRenewal: coerce to Date (ISO string from <input type="date">)
- */
 export const subscriptionCreateSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  cost: z.coerce
-    .number() // no options object here
-    .refine((v) => Number.isFinite(v), { message: "Cost must be a number" })
-    .positive("Cost must be greater than 0"),
-  currency: CurrencyEnum,
+  name: z.string().min(1, "Name is required").max(100),
+  cost: z.union([
+    z.number().finite().nonnegative("Cost must be ≥ 0"),
+    z.string().regex(/^\d+(\.\d{1,2})?$/, "Use a number like 9.99"),
+  ]),
+  currency: z.string().length(3, "Use a 3-letter currency code (e.g., USD)"),
   billingCycle: BillingCycleEnum,
-  nextRenewal: z.coerce.date(), // keep as-is unless you see a similar error
+  nextRenewal: z.string().datetime().or(z.date()),
 });
 
+// For PATCH (partial update) — but require at least one field:
+export const subscriptionUpdateSchema = subscriptionCreateSchema.partial().refine(
+  (obj) => Object.keys(obj).length > 0,
+  { message: "Provide at least one field to update." }
+);
+
+// Types derived from zod:
 export type SubscriptionCreateInput = z.infer<typeof subscriptionCreateSchema>;
+export type SubscriptionUpdateInput = z.infer<typeof subscriptionUpdateSchema>;
