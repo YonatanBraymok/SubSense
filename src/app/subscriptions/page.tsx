@@ -1,11 +1,13 @@
 // src/app/subscriptions/page.tsx
-import { auth } from 'auth'; // or wherever you exported NextAuth's auth()
-import { redirect } from 'next/navigation';
-import prisma from '@/lib/prisma';
+import AddSubscriptionForm from "./add-subscription-form";
+import { auth } from "auth";           // ← use your app alias
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";   // ← named export from your prisma singleton
 
+// Format money with graceful fallback for unknown currency codes
 function formatMoney(amount: number, currency: string) {
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
@@ -14,44 +16,49 @@ function formatMoney(amount: number, currency: string) {
 export default async function SubscriptionsPage() {
   const session = await auth();
 
-  if (!session?.user?.email) {
-    redirect('/api/auth/signin?callbackUrl=/subscriptions');
+  if (!session?.user?.id) {
+    redirect("/api/auth/signin?callbackUrl=/subscriptions");
   }
 
-  // Find the DB user by email to get the id
-  const dbUser = await prisma.user.findUnique({
-    where: { email: session!.user!.email! },
-    select: { id: true, name: true, email: true },
-  });
+  // Prefer the id we place on session.user in NextAuth callbacks
+  let userId: string | null = session.user.id;
 
-  if (!dbUser) {
-    return <div className="p-6">No database user found for this session.</div>;
+  // (Optional) Fallback by email if you ever hit an older session without id
+  if (!userId && session.user.email) {
+    const dbUser = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true },
+    });
+    if (!dbUser) {
+      return <div className="p-6">No database user found for this session.</div>;
+    }
+    userId = dbUser.id;
+  }
+
+  if (!userId) {
+    return <div className="p-6">Unable to resolve user. Please sign out and sign in again.</div>;
   }
 
   const subs = await prisma.subscription.findMany({
-    where: { userId: dbUser.id },
-    orderBy: { nextRenewal: 'asc' },
+    where: { userId },
+    orderBy: { nextRenewal: "asc" },
   });
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-4">
+    <div className="max-w-2xl mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Your subscriptions</h1>
-        <button
-          disabled
-          className="rounded-md border px-3 py-2 text-sm opacity-60 cursor-not-allowed"
-          title="Coming soon"
-        >
-          Add Subscription
-        </button>
       </div>
 
+      {/* Step 5 form (client component). On success it calls router.refresh() */}
+      <AddSubscriptionForm />
+
       {subs.length === 0 ? (
-        <p>No subscriptions yet.</p>
+        <p className="text-sm text-gray-600">No subscriptions yet.</p>
       ) : (
-        <ul className="divide-y">
+        <ul className="divide-y rounded-lg border">
           {subs.map((s) => (
-            <li key={s.id} className="py-3 flex items-center justify-between">
+            <li key={s.id} className="py-3 px-4 flex items-center justify-between">
               <div>
                 <div className="font-medium">{s.name}</div>
                 <div className="text-sm text-gray-500">
