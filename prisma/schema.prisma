@@ -1,4 +1,10 @@
 // prisma/schema.prisma
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,15 +15,15 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  emailVerified  DateTime? @map("email_verified")
-  image          String?
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  accounts       Account[]
-  sessions       Session[]
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  name          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
 
   displayName     String?
   defaultCurrency String?
@@ -29,18 +35,19 @@ model User {
 }
 
 model Subscription {
-  id               String   @id @default(cuid())
-  name             String
-  priceCents       Int      // store money as integer cents
-  currency         String   // e.g., "USD", "ILS"
-  billingInterval  String   // "monthly" | "yearly" (can refactor to enum later)
-  nextRenewalDate  DateTime
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id           String       @id @default(cuid())
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  name         String
+  cost         Decimal      @db.Decimal(10, 2)
+  currency     String       @default("USD")
+  billingCycle BillingCycle
+  nextRenewal  DateTime
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
-  // (Optional) owner
-  user   User?   @relation(fields: [userId], references: [id])
-  userId String?
+  @@index([userId])
+  @@unique([userId, name])
 }
 
 model Account {
