@@ -7,6 +7,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import Filters from "./filters";
 import type { SubscriptionRow } from "@/types/subscription";
 import { RowActions } from "@/app/subscriptions/RowActions";
+import Link from "next/link";
 
 type PageSearchParams = {
   sort?: "nextRenewal" | "createdAt";
